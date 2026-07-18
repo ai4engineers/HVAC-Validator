@@ -1,122 +1,72 @@
-# ==========================================
-# SECURE CORE ENGINEERING LOGIC ENGINE
-# Standards Reference: ISHRAE / ASHRAE / ECBC India
-# ==========================================
+# hvac_engine.py
 
 class HVACValidatorEngine:
-    def __init__(self, location, space_type, area_sqmt, design_tr, safety_factor=1.15):
+    def __init__(self, location, space_type, area_sqmt, design_tr=0.0):
         self.location = location
         self.space_type = space_type
         self.area_sqmt = area_sqmt
         self.design_tr = design_tr
-        self.safety_factor = safety_factor
-        
-        # Indian ECBC Wall U-Value Limits (W/m²K) for Composite/Hot-Dry Climates
-        self.MAX_WALL_U_VALUE = 0.40 
-        # ISHRAE Baseline Ventilation Requirements (CFM per Person + CFM per SqFt converted roughly)
-        self.VENTILATION_RULES = {
-            "Office": {"cfm_per_person": 5, "cfm_per_sqft": 0.06, "occupant_density_sqmt": 10},
-            "Server Room": {"cfm_per_person": 5, "cfm_per_sqft": 0.12, "occupant_density_sqmt": 50},
-            "Conference Room": {"cfm_per_person": 15, "cfm_per_sqft": 0.06, "occupant_density_sqmt": 3}
-        }
 
-    def calculate_heat_load(self, actual_wall_u, current_occupancy):
+    def calculate_from_scratch(self, building_type, occupancy=10):
         """
-        Calculates heat load using standard thermal transmittance.
-        Q = U * A * deltaT + Internal Heat Gains
-        Indian design ambient peak outdoor temp assumed at 43°C, indoor comfort at 24°C (deltaT = 19)
+        Calculates cooling load based on building type rules-of-thumb
+        Commercial: ~150 sqmt/TR or ~40 Watts/sqmt
+        Residential Bungalow: ~200 sqmt/TR or ~30 Watts/sqmt
         """
-        delta_t = 19 
+        if "commercial" in building_type.lower():
+            calculated_tr = max(2.0, round((self.area_sqmt / 12.0), 2)) # Approx 12 sqmt per TR baseline
+        else: # Residential/Bungalow
+            calculated_tr = max(1.5, round((self.area_sqmt / 16.0), 2)) # Approx 16 sqmt per TR baseline
         
-        # 1. Envelope Heat Gain (Sensible)
-        envelope_load_watts = actual_wall_u * (self.area_sqmt * 3) * delta_t # Assumes 3m ceiling height for wall area estimate
-        
-        # 2. Internal Heat Gain (People + Equipment baseline)
-        if self.space_type in self.VENTILATION_RULES:
-            occupants = max(current_occupancy, round(self.area_sqmt / self.VENTILATION_RULES[self.space_type]["occupant_density_sqmt"]))
+        return calculated_tr
+
+    def generate_full_boq(self, target_tr, building_type):
+        # Select Chiller Type based on sizing scale
+        if target_tr > 100:
+            chiller_type = "Water-Cooled Centrifugal Chiller (AHRI 550/590 Certified)"
+            cooling_tower = f"Induced Draft Cooling Tower: {round(target_tr * 1.2, 1)} TR"
+        elif target_tr > 30:
+            chiller_type = "Air-Cooled Screw Chiller (AHRI 550/590 Certified)"
+            cooling_tower = "N/A (Air-Cooled)"
         else:
-            occupants = current_occupancy
-            
-        people_load_watts = occupants * 120 # 120W heat dissipation per person sitting
-        equipment_load_watts = self.area_sqmt * 25 # 25W/sqmt standard laptop/lighting load baseline
-        
-        total_load_watts = (envelope_load_watts + people_load_watts + equipment_load_watts) * self.safety_factor
-        
-        # Convert Watts to Tons of Refrigeration (1 TR = 3517 Watts)
-        calculated_tr = total_load_watts / 3517
-        return round(calculated_tr, 2), occupants
+            chiller_type = "Variable Refrigerant Flow (VRF) Inverter System (AHRI 1230 Certified)"
+            cooling_tower = "N/A (DX System)"
 
-    def run_compliance_check(self, actual_wall_u, current_occupancy, equipment_cop):
-        """
-        Executes strict cross-checks against codes and returns actionable matrices.
-        """
-        calculated_tr, calculated_occupants = self.calculate_heat_load(actual_wall_u, current_occupancy)
-        report = {
-            "status": "PASS",
-            "non_compliances": [],
-            "savings_suggestions": [],
-            "metrics": {
-                "calculated_tr": calculated_tr,
-                "designed_tr": self.design_tr,
-                "deviation_percentage": round(((self.design_tr - calculated_tr) / calculated_tr) * 100, 2)
-            }
-        }
+        # Pump Sizing Math (Primary/Secondary chilled water flows)
+        chilled_water_flow_gpm = round(target_tr * 2.4, 1) # Rule: 2.4 GPM per TR
+        pump_head_m = 25 # Standard structural head estimate
+        pump_kw = round((chilled_water_flow_gpm * pump_head_m) / 1000, 2)
 
-        # Check 1: Sizing Validation (Undersized / Oversized rules)
-        deviation = report["metrics"]["deviation_percentage"]
-        if deviation > 20:
-            report["status"] = "FAIL"
-            report["non_compliances"].append(
-                f"CRITICAL OVERSIZING: Designed capacity ({self.design_tr} TR) is {deviation}% higher than the calculated peak scientific requirement ({calculated_tr} TR). This will cause compressor short-cycling, poor humidity control, and high electricity bills."
-            )
-            # End-user commercial savings calculations based on average Indian commercial DISCOM tariffs (~₹9 per kWh)
-            potential_savings = round((self.design_tr - calculated_tr) * 1.2 * 8 * 250 * 9, 0) # rough annual savings matrix
-            report["savings_suggestions"].append(
-                f"SUGGESTION: Downsize equipment capacity closer to {calculated_tr} TR. Implement a Multi-Stage Compressor or a Variable Frequency Drive (VFD) chiller pack. Estimated annual operational electricity savings: ~Rs. {potential_savings:,}."
-            )
-        elif deviation < -10:
-            report["status"] = "FAIL"
-            report["non_compliances"].append(
-                f"CRITICAL UNDERSIZING: Designed capacity ({self.design_tr} TR) is {abs(deviation)}% lower than calculated peak thermal load ({calculated_tr} TR). The system will fail to maintain indoor comfort parameters during Indian peak summer months."
-            )
+        # Air Handling Units (AHU) and Air Flow Math
+        total_cfm = round(target_tr * 400, 0) # Rule: 400 CFM per TR
+        ahu_count = max(1, int(total_cfm // 3000))
+        cfm_per_ahu = round(total_cfm / ahu_count, 0)
 
-        # Check 2: Building Envelope ECBC Compliance
-        if actual_wall_u > self.MAX_WALL_U_VALUE:
-            report["status"] = "FAIL"
-            report["non_compliances"].append(
-                f"ENVELOPE NON-COMPLIANCE: Wall U-Value is {actual_wall_u} W/m²K, which exceeds the max limits set by India's Energy Conservation Building Code (ECBC) max limit of {self.MAX_WALL_U_VALUE} W/m²K."
-            )
-            report["savings_suggestions"].append(
-                "SUGGESTION: Add 50mm of Rockwool insulation or extruded polystyrene (XPS) boards to external walls to lower the U-value. This directly downsizes structural cooling infrastructure requirements."
-            )
+        # Main Duct Sizing (based on equal friction at 0.1 inch wg/100ft)
+        main_duct_area_sqin = (total_cfm / 1200) * 144 # 1200 FPM velocity baseline
+        duct_width = round((main_duct_area_sqin) ** 0.5, 0)
+        duct_size_str = f"{int(duct_width * 1.2)}mm x {int(duct_width * 0.8)}mm"
 
-        # Check 3: Efficiency Check (BEE / AHRI baselines)
-        if equipment_cop < 3.5:
-            report["status"] = "FAIL"
-            report["non_compliances"].append(
-                f"EFFICIENCY DEFICIT: Equipment Coefficient of Performance (COP) is {equipment_cop}. Modern high-efficiency systems should meet or exceed a COP of 4.5 under AHRI standard conditions."
-            )
+        # Piping sizes (based on water velocity limits)
+        if chilled_water_flow_gpm > 200:
+            pipe_size = "150 mm Dia MS Heavy Class"
+        elif chilled_water_flow_gpm > 80:
+            pipe_size = "100 mm Dia MS Heavy Class"
+        else:
+            pipe_size = "50 mm Dia GI/MS Class"
 
-        return report
-
-# --- Local Test Verification Pipeline ---
-if __name__ == "__main__":
-    # Simulate an actual Indian corporate office project audit
-    # Let's say a consultant designed a 45 TR system for a 500 sqmt space, with poor wall insulation
-    validator = HVACValidatorEngine(location="Delhi", space_type="Office", area_sqmt=500, design_tr=45.0)
-    audit_results = validator.run_compliance_check(actual_wall_u=0.65, current_occupancy=50, equipment_cop=3.0)
-    
-    print("\n=======================================================")
-    print("      HVAC VALIDATOR ENGINEERING ENGINE TEST RUN       ")
-    print("=======================================================")
-    print(f"AUDIT STATUS: {audit_results['status']}")
-    print(f"Calculated Ideal Load: {audit_results['metrics']['calculated_tr']} TR")
-    print(f"User Designed Load: {audit_results['metrics']['designed_tr']} TR")
-    print(f"Sizing Deviation: {audit_results['metrics']['deviation_percentage']}%")
-    print("\nIdentified Issues / Non-Compliances:")
-    for issue in audit_results['non_compliances']:
-        print(f" ❌ {issue}")
-    print("\nActionable Optimization & Financial Savings:")
-    for suggestion in audit_results['savings_suggestions']:
-        print(f" 💡 {suggestion}")
-    print("=======================================================\n")
+        # Compile the comprehensive structural list
+        boq = [
+            {"Item": "Primary Cooling Source", "Specification": chiller_type, "Qty": "1 Lot"},
+            {"Item": "Heat Rejection System", "Specification": cooling_tower, "Qty": "1 Unit" if "Water" in chiller_type else "0"},
+            {"Item": "Chilled Water Pumps", "Specification": f"End Suction Pumps, Flow: {chilled_water_flow_gpm} GPM @ {pump_head_m}m Head (~{pump_kw} kW)", "Qty": "2 Nos (1W + 1SB)"},
+            {"Item": "Air Handling Units (AHUs)", "Specification": f"Double Skin AHU, Capacity: {cfm_per_ahu} CFM with Pre-filters", "Qty": f"{ahu_count} Nos"},
+            {"Item": "Ventilation Fan Units", "Specification": "Axial Flow Inline Fans for Fresh Air Injection (ASHRAE 62.1 compliant)", "Qty": "2 Nos"},
+            {"Item": "Main Header Ductwork", "Specification": f"G.I. Ducting Sheet (0.8mm/22G) sized at approx {duct_size_str}", "Qty": f"{round(self.area_sqmt * 1.2, 0)} Sqm"},
+            {"Item": "Chilled Water Piping", "Specification": f"{pipe_size} with anti-corrosive primer coating", "Qty": "Rmt As per Layout"},
+            {"Item": "Motorized Valves & Balancing", "Specification": "Pressure Independent Balancing Valves (PIBV) & 2-Way Modulating Valves", "Qty": "1 Set per AHU"},
+            {"Item": "Gauges & Sensors", "Specification": "Industrial Pressure Gauges (0-10 bar), Dial Thermometers & Wet-bulb Sensors", "Qty": "1 Lot"},
+            {"Item": "Thermal Insulation", "Specification": "Class 'O' Nitrile Rubber Insulation (19mm thickness) with Aluminum cladding", "Qty": "1 Lot"},
+            {"Item": "Automation / BMS Sensors", "Specification": "Digital Temp/RH Transmitters, Flow Meters, Carbon Dioxide (CO2) Sensors", "Qty": "1 Lot"}
+        ]
+        return boq, chiller_type
