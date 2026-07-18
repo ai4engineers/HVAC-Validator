@@ -61,7 +61,7 @@ if uploaded_files:
         st.write(f"**Extracted Net Built Area:** {data['area_sqmt']} Sq. Meters")
         
         # Instantiate Core Logic Engine
-        engine = HVACValidatorEngine(location=data["location"], space_type=data["space_type"], area_sqmt=data["area_sqmt"])
+        engine = HVACValidatorEngine(location=data["location"], space_type=data["space_type"], area_sqmt=data["area_sqmt"], design_tr=0.0)
         target_tr = engine.calculate_from_scratch(building_type)
         boq_data, selected_chiller = engine.generate_full_boq(target_tr, building_type)
         
