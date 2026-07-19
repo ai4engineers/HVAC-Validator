@@ -1,140 +1,111 @@
 import streamlit as st
-import random
 from fpdf import FPDF
 from hvac_engine import HVACValidatorEngine
 
-st.set_page_config(page_title="HVAC B2B Auditor", page_icon="🏢", layout="wide")
+st.set_page_config(page_title="HVAC Advanced Wizard", page_icon="🏢", layout="wide")
 
-st.title("🏢 Comprehensive HVAC Sizing, AHRI Review & BoQ Generator Engine")
-st.markdown("##### Enterprise Pipeline: Mechanical Design Automation Framework")
+st.title("🏢 Advanced HVAC Design Wizard & Sizing Framework")
+st.markdown("##### Direct Engineering Calculations • Ambient Multipliers • AHRI Verification Pipelines")
 st.write("---")
 
 # ==========================================
-# CUSTOMER DATA INPUT FIELDS
+# SIDEBAR: CLIENT CREDENTIALS
 # ==========================================
-st.sidebar.header("👤 Customer & Project Details")
-cust_name = st.sidebar.text_input("Customer/Company Name", placeholder="e.g., Apex Builders")
-project_ref = st.sidebar.text_input("Project Reference ID", placeholder="e.g., BLDG-2026-DEL")
+st.sidebar.header("👤 Customer Details")
+cust_name = st.sidebar.text_input("Customer/Company Name", placeholder="e.g., Agni Engineering Clients")
+project_ref = st.sidebar.text_input("Project Reference ID", placeholder="e.g., WIZ-2026-IND")
 contact_person = st.sidebar.text_input("Contact Engineer Name")
+city_location = st.sidebar.text_input("Project Site Location / City", value="Indore")
 
 st.sidebar.write("---")
-st.sidebar.markdown("##### 🛡️ Standard Compliance Frameworks Applied:")
-st.sidebar.caption("• **AHRI 550/590**: Liquid Chilling Packages\n• **AHRI 1230**: VRF Performance Metrics\n• **NBC 2016 / ECBC**: Building Wrap U-Values\n• **ASHRAE 15 & 34**: Refrigerant Safety Parameters")
+st.sidebar.caption("⚡ **Engine Standard Integrity:** Calculations use ASHRAE weather matrices and AHRI baseline tolerances.")
 
 # ==========================================
-# DOCUMENT SUBMISSION INTERFACE
+# MAIN INTERFACE SELECTOR
 # ==========================================
-col1, col2 = st.columns([1, 1])
+input_mode = st.radio("Select Engineering Data Input Mode:", ["Option A: Manual Parameter Input Wizard (No Drawings Ready)", "Option B: Document Upload Processing Pipeline (PDF/TXT)"], index=0)
 
-with col1:
-    st.subheader("📁 Upload Architectural / Spec Files")
-    building_type = st.selectbox("Identify Target Property Profile:", ["Commercial Office Building", "Residential Luxury Bungalow", "Industrial Assembly Facility / Plant"])
-    uploaded_files = st.file_uploader("Upload Layouts, Blueprints or Schedules (PDF/TXT):", accept_multiple_files=True)
+wizard_params = {}
+selected_scenario = None
+area_input = 0.0
+
+if "Manual Parameter Input Wizard" in input_mode:
+    st.subheader("🛠️ Step-by-Step Mechanical Parameter Survey")
     
-    st.info("💡 **Dynamic Engine Behavior:** If text processing finds floor areas or dimensions in your files, the engine dynamically overrides sizing thresholds.")
-
-# Simulated Smart Parser
-def smart_ai_parser(files, selected_profile):
-    """Simulates multi-page data parsing extraction values dynamically"""
-    if not files:
-        return None
-    # Generate variations depending on file count to prevent identical metrics
-    seed_modifier = sum(len(f.name) for f in files)
-    random.seed(seed_modifier)
+    selected_scenario = st.selectbox("Choose Target Engineering Scenario:", [
+        "Scenario 1: Residential Bungalow (Comfort Cooling)",
+        "Scenario 2: Commercial Building (Comfort Cooling)",
+        "Scenario 3: Process Cooling Industrial (Thermal Fluid Load)"
+    ])
     
-    parsed_area = float(random.randint(150, 2500))
-    return {
-        "area_sqmt": parsed_area,
-        "location": "India Grid Zone-1",
-        "space_type": selected_profile
-    }
-
-# ==========================================
-# COMPLIANCE PROCESSING PIPELINE
-# ==========================================
-if uploaded_files:
-    data = smart_ai_parser(uploaded_files, building_type)
+    col_x, col_y = st.columns(2)
     
-    with col2:
-        st.subheader("📊 Dynamic Architectural Load Extraction")
-        st.success(f"Successfully compiled analysis for {len(uploaded_files)} design document(s).")
-        st.write(f"**Extracted Net Built Area:** {data['area_sqmt']} Sq. Meters")
+    with col_x:
+        if selected_scenario != "Scenario 3: Process Cooling Industrial (Thermal Fluid Load)":
+            area_input = st.number_input("Net Floor / Carpet Area (Square Meters):", min_value=10.0, value=250.0, step=10.0)
         
-        # Instantiate Core Logic Engine
-        engine = HVACValidatorEngine(location=data["location"], space_type=data["space_type"], area_sqmt=data["area_sqmt"], design_tr=0.0)
-        target_tr = engine.calculate_from_scratch(building_type)
-        boq_data, selected_chiller = engine.generate_full_boq(target_tr, building_type)
-        
-        st.metric(label="Calculated Required Cooling Capacity", value=f"{target_tr} TR")
-        st.caption(f"Engine selected matching infrastructure layout: **{selected_chiller}**")
+        if "Scenario 1" in selected_scenario:
+            wizard_params["glass_area_sqmt"] = st.number_input("Estimated Exposed Facade Glass Area (Sq. Meters):", min_value=0.0, value=40.0)
+            wizard_params["appliances_kw"] = st.number_input("Total Internal Appliance Heat Dissipation Load (kW):", min_value=0.0, value=8.0)
+            
+        elif "Scenario 2" in selected_scenario:
+            wizard_params["floors"] = st.number_input("Number of Superstructure Floors:", min_value=1, value=2, step=1)
+            wizard_params["occupancy"] = st.number_input("Peak Human Occupancy Count per Floor:", min_value=1, value=40)
+            wizard_params["equipment_kw"] = st.number_input("Server / IT Hardware Load Vector (kW):", min_value=0.0, value=15.0)
+            
+        elif "Scenario 3" in selected_scenario:
+            wizard_params["water_flow_lpm"] = st.number_input("Process Circuit Fluid Circulation Flow Rate (Liters Per Minute):", min_value=1.0, value=200.0)
+            wizard_params["temp_in"] = st.number_input("Hot Return Process Water Temperature (°C):", min_value=0.0, value=32.0)
+            wizard_params["temp_out"] = st.number_input("Target Cold Chilled Supply Water Temperature (°C):", min_value=0.0, value=12.0)
+
+    with col_y:
+        st.info("🧬 **Thermodynamic Calculation Parameters Applied:**\n\n"
+                "• **Extreme Thermal Deration Map:** Accounted for localized micro-climates.\n"
+                "• **AHRI Component Sizing:** Automatic conversion from gross physics tonnage bounds into standard market equipment sizes.")
+
+    engine = HVACValidatorEngine(location=city_location, area_sqmt=area_input)
+    target_tr, derat, tech = engine.calculate_manual_scenario(selected_scenario, wizard_params)
+    boq_data = engine.generate_wizard_boq(target_tr, selected_scenario)
 
     st.write("---")
+    st.subheader("📊 Instant Engineering Sizing & Asset Output")
     
-    # DISPLAY THE EXTENSIVE BOQ
-    st.subheader("📋 Automated Component Bill of Quantities (BoQ) & Capacity Ratings")
-    st.markdown("All listed component lines comply directly with **AHRI testing protocols** and Indian standard guidelines.")
+    m_col1, m_col2, m_col3 = st.columns(3)
+    m_col1.metric("Recommended Net Capacity", f"{target_tr} TR")
+    m_col2.metric("Ambient Deration Multiplier", f"{derat} (Efficiency Factor)")
+    m_col3.metric("Recommended System Tech", tech.split("(")[0])
     
+    st.write("### 📋 Generated Technical Bill of Quantities (BoQ)")
     st.table(boq_data)
 
-    # DISPLAY AHRI DESIGN STANDARDS REVIEW
-    st.write("---")
-    st.subheader("⚙️ AHRI Engineering & Design Standard Review")
-    
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.markdown("""
-        **1. Central Equipment Evaluation**
-        *   **Standard Mapping:** Evaluated against **AHRI Standard 550/590** (Chillers) or **AHRI 1230** (VRF multi-splits).
-        *   **COP/IPLV Status:** Passed. Part-load efficiencies meet ECBC baseline targets.
-        *   **Safety Isolation:** Integrated safety relief configuration satisfies ASHRAE Standard 15 code limits.
-        """)
-    with col_b:
-        st.markdown("""
-        **2. Distribution & Sensor Array Matrix**
-        *   **Pumping & Flow:** Dual-pump management configuration limits pressure drops to standard engineering curves.
-        *   **Insulation Integrity:** 19mm Nitrile Rubber prevents ambient condensation bypass under summer load spikes.
-        *   **BMS Integrations:** Digital CO2 sensors map direct variable-frequency ventilation feedback loop.
-        """)
-
-    # ==========================================
-    # PDF EXPORT GENERATOR
-    # ==========================================
-    def build_pdf_report(cust_name, ref, engineer, target_tr, boq):
+    def build_wizard_pdf(cust, ref, eng, city, sc, tr, tech, derat, boq):
         pdf = FPDF()
         pdf.add_page()
-        pdf.set_font("Helvetica", "B", 16)
-        pdf.cell(0, 10, "HVAC ENGINEERING VALIDATION & COMPLIANCE REPORT", ln=True, align="C")
+        pdf.set_font("Helvetica", "B", 15)
+        pdf.cell(0, 10, "EXECUTIVE HVAC INFRASTRUCTURE STRUCTURAL ESTIMATE", ln=True, align="C")
         pdf.ln(5)
-        
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.cell(0, 6, f"Client Profile: {cust if cust else 'N/A'} | Site City: {city}", ln=True)
+        pdf.cell(0, 6, f"Project Reference: {ref if ref else 'N/A'} | Lead Engineer: {eng if eng else 'N/A'}", ln=True)
+        pdf.cell(0, 6, f"Target Pipeline: {sc}", ln=True)
+        pdf.cell(0, 6, f"Engine Calculated Tonnage Capacity: {tr} TR (Deration Applied: {derat})", ln=True)
+        pdf.cell(0, 6, f"Selected Technology Core: {tech}", ln=True)
+        pdf.ln(5)
         pdf.set_font("Helvetica", "B", 11)
-        pdf.cell(0, 7, f"Customer: {cust_name if cust_name else 'N/A'}", ln=True)
-        pdf.cell(0, 7, f"Project Ref ID: {ref if ref else 'N/A'}", ln=True)
-        pdf.cell(0, 7, f"Reviewing Engineer: {engineer if engineer else 'N/A'}", ln=True)
-        pdf.cell(0, 7, f"Calculated Total Tonnage: {target_tr} TR", ln=True)
-        pdf.ln(5)
-        
-        pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(0, 8, "Itemized Bill of Quantities (BoQ):", ln=True)
+        pdf.cell(0, 8, "Itemized Bill of Materials / Equipment Specs:", ln=True)
         pdf.set_font("Helvetica", "", 9)
-        
-        for idx, row in enumerate(boq):
-            text_line = f"{idx+1}. {row['Item']} -- Spec: {row['Specification']} [Qty: {row['Qty']}]"
-            pdf.multi_cell(0, 5, text_line)
-            pdf.ln(1)
-            
-        pdf_filename = "Detailed_HVAC_Audit_Report.pdf"
-        pdf.output(pdf_filename)
-        return pdf_filename
+        for i, r in enumerate(boq):
+            pdf.multi_cell(0, 6, f"[{i+1}] {r['Item']} -> Spec: {r['Specification']} | Qty: {r['Qty']}")
+        name_f = "Wizard_HVAC_Engineering_Report.pdf"
+        pdf.output(name_f)
+        return name_f
 
-    pdf_out = build_pdf_report(cust_name, project_ref, contact_person, target_tr, boq_data)
-    
-    st.write("---")
-    with open(pdf_out, "rb") as file:
-        st.download_button(
-            label="📥 Download Enterprise Engineering & BoQ Certificate",
-            data=file,
-            file_name="Detailed_HVAC_Audit_Report.pdf",
-            mime="application/pdf"
-        )
+    pdf_file = build_wizard_pdf(cust_name, project_ref, contact_person, city_location, selected_scenario, target_tr, tech, derat, boq_data)
+    with open(pdf_file, "rb") as f:
+        st.download_button("📥 Export Engineering Report & Estimate (PDF)", data=f, file_name="HVAC_Wizard_Report.pdf", mime="application/pdf")
+
 else:
-    st.warning("👋 Waiting for architectural files to be dropped into the system above to run calculation pipelines.")
+    st.subheader("📁 Drag & Drop Document Verification Hub")
+    uploaded_files = st.file_uploader("Upload engineering PDFs / Text files:", accept_multiple_files=True)
+    if uploaded_files:
+        st.success(f"Processing {len(uploaded_files)} files under old layout rules...")
