@@ -5,36 +5,59 @@ class HVACValidatorEngine:
         self.location = location
         self.area_sqmt = area_sqmt
 
-    def calculate_manual_scenario(self, scenario_type, params):
+    def calculate_manual_scenario(self, scenario_type, params, amb_temp=None, amb_rh=None):
         """
-        Calculates explicit sizing and ambient deration physics for 3 specialized scenarios.
+        Calculates explicit sizing and ambient deration physics, incorporating 
+        specific ambient Dry-Bulb Temperature and Relative Humidity parameters.
         """
-        loc = self.location.lower()
-        if any(x in loc for x in ["delhi", "indore", "rajasthan", "north"]):
-            deration_factor = 0.88  # 12% capacity loss due to extreme peak ambient dry-bulb temps
-        elif any(x in loc for x in ["mumbai", "chennai", "kolkata", "coastal"]):
-            deration_factor = 0.92  # 8% capacity loss due to high latent heat load / condensation
-        else:
-            deration_factor = 0.95  # Standard rating baseline
+        deration_factor = 0.95
+        latent_multiplier = 1.0
 
+        # 1. Advanced Psychrometric Scaling
+        if amb_temp is not None and amb_rh is not None:
+            # Temperature Deration (Air-cooled condenser efficiency loss)
+            if amb_temp >= 45:
+                deration_factor = 0.82
+            elif amb_temp >= 40:
+                deration_factor = 0.88
+            elif amb_temp >= 35:
+                deration_factor = 0.92
+                
+            # Humidity Latent Load Multiplier (Energy required to dehumidify)
+            if amb_rh >= 75:
+                latent_multiplier = 1.18
+            elif amb_rh >= 60:
+                latent_multiplier = 1.10
+        else:
+            # Fallback to regional heuristics if user skips explicit input
+            loc = self.location.lower()
+            if any(x in loc for x in ["delhi", "indore", "rajasthan", "north"]):
+                deration_factor = 0.88
+                latent_multiplier = 1.0
+            elif any(x in loc for x in ["mumbai", "chennai", "kolkata", "coastal"]):
+                deration_factor = 0.92
+                latent_multiplier = 1.15
+
+        # 2. Base Load Calculations
         if "Scenario 1" in scenario_type:
             glass_area = params.get("glass_area_sqmt", 0)
             appliances_kw = params.get("appliances_kw", 0)
             
-            base_load_tr = self.area_sqmt / 16.0 
+            # Apply latent multiplier to the base envelope load
+            base_load_tr = (self.area_sqmt / 16.0) * latent_multiplier
             solar_gain_tr = glass_area * 0.08
-            internal_gain_tr = appliances_kw * 0.284  # 1 kW = 0.284 TR
+            internal_gain_tr = appliances_kw * 0.284
             
             gross_tr = base_load_tr + solar_gain_tr + internal_gain_tr
             net_required_tr = round(gross_tr / deration_factor, 1)
-            tech_recommended = "High-Efficiency Inverter VRF System (AHRI 1230 Certified)"
+            tech_recommended = "High-Efficiency Inverter VRF System (AHRI 1230)"
             
         elif "Scenario 2" in scenario_type:
             occupancy = params.get("occupancy", 10)
             equipment_kw = params.get("equipment_kw", 0)
             floors = params.get("floors", 1)
             
-            base_load_tr = (self.area_sqmt * floors) / 12.0
+            base_load_tr = ((self.area_sqmt * floors) / 12.0) * latent_multiplier
             people_load_tr = (occupancy * 500) / 12000  
             it_load_tr = equipment_kw * 0.284
             
@@ -51,16 +74,16 @@ class HVACValidatorEngine:
             temp_in = params.get("temp_in", 30)
             temp_out = params.get("temp_out", 15)
             
-            # Thermodynamic Fluid Formula: Q = m * C * deltaT
-            mass_flow = water_flow_lpm / 60.0  # kg/sec
+            mass_flow = water_flow_lpm / 60.0
             delta_t = temp_in - temp_out
             kw_load = mass_flow * 4.186 * delta_t
             process_tr = kw_load / 3.517  
             
+            # Industrial processes are less affected by humidity, purely ambient dry-bulb deration
             net_required_tr = round((process_tr * 1.25) / deration_factor, 1)
-            tech_recommended = "Industrial Process Water Chiller with Shell and Tube Evaporator"
+            tech_recommended = "Heavy-Duty Process Water Chiller (Shell & Tube)"
 
-        return net_required_tr, deration_factor, tech_recommended
+        return net_required_tr, deration_factor, latent_multiplier, tech_recommended
 
     def generate_wizard_boq(self, target_tr, scenario_type):
         total_cfm = round(target_tr * 400, 0)
