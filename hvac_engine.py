@@ -13,9 +13,8 @@ class HVACValidatorEngine:
         deration_factor = 0.95
         latent_multiplier = 1.0
 
-        # 1. Advanced Psychrometric Scaling
+        # Advanced Psychrometric Scaling Matrix
         if amb_temp is not None and amb_rh is not None:
-            # Temperature Deration (Air-cooled condenser efficiency loss)
             if amb_temp >= 45:
                 deration_factor = 0.82
             elif amb_temp >= 40:
@@ -23,13 +22,11 @@ class HVACValidatorEngine:
             elif amb_temp >= 35:
                 deration_factor = 0.92
                 
-            # Humidity Latent Load Multiplier (Energy required to dehumidify)
             if amb_rh >= 75:
                 latent_multiplier = 1.18
             elif amb_rh >= 60:
                 latent_multiplier = 1.10
         else:
-            # Fallback to regional heuristics if user skips explicit input
             loc = self.location.lower()
             if any(x in loc for x in ["delhi", "indore", "rajasthan", "north"]):
                 deration_factor = 0.88
@@ -38,19 +35,18 @@ class HVACValidatorEngine:
                 deration_factor = 0.92
                 latent_multiplier = 1.15
 
-        # 2. Base Load Calculations
+        # Base Load Scenario Router
         if "Scenario 1" in scenario_type:
             glass_area = params.get("glass_area_sqmt", 0)
             appliances_kw = params.get("appliances_kw", 0)
             
-            # Apply latent multiplier to the base envelope load
             base_load_tr = (self.area_sqmt / 16.0) * latent_multiplier
             solar_gain_tr = glass_area * 0.08
             internal_gain_tr = appliances_kw * 0.284
             
             gross_tr = base_load_tr + solar_gain_tr + internal_gain_tr
             net_required_tr = round(gross_tr / deration_factor, 1)
-            tech_recommended = "High-Efficiency Inverter VRF System (AHRI 1230)"
+            tech_recommended = "High-Efficiency Inverter VRF System (AHRI 1230 Certified)"
             
         elif "Scenario 2" in scenario_type:
             occupancy = params.get("occupancy", 10)
@@ -79,9 +75,8 @@ class HVACValidatorEngine:
             kw_load = mass_flow * 4.186 * delta_t
             process_tr = kw_load / 3.517  
             
-            # Industrial processes are less affected by humidity, purely ambient dry-bulb deration
             net_required_tr = round((process_tr * 1.25) / deration_factor, 1)
-            tech_recommended = "Heavy-Duty Process Water Chiller (Shell & Tube)"
+            tech_recommended = "Heavy-Duty Process Water Chiller (Shell & Tube Framework)"
 
         return net_required_tr, deration_factor, latent_multiplier, tech_recommended
 
